@@ -1,23 +1,47 @@
 import { httpGet } from './mock-http-interface';
 
-// TODO define this type properly
-type TResult = {
-  'Arnie Quote'?: string;
-  'FAILURE'?: string;
+interface SuccessResult {
+  'Arnie Quote': string;
+}
+
+interface FailureResult {
+  'FAILURE': string;
+}
+
+type TResult = SuccessResult | FailureResult;
+
+type THttpResponse = {
+  status: number;
+  body: string;
+}
+
+const processResults = (results: PromiseSettledResult<THttpResponse>[]): TResult[] => {
+  return results.map(result => {
+    if (result.status === 'fulfilled') {
+      try {
+        const message = JSON.parse(result.value.body).message;
+
+        if (result.value.status === 200) {
+          return { 'Arnie Quote': message };
+        } else {
+          return { 'FAILURE': message };
+        }
+      } catch (error) {
+        // Handling JSON parsing errors
+        return { 'FAILURE': 'Invalid JSON response' };
+      }
+    } else {
+      // Handling errors from Promise rejection
+      const errorMessage = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+      return { 'FAILURE': errorMessage };
+    }
+  });
 }
 
 export const getArnieQuotes = async (urls : string[]) : Promise<TResult[]> => {
-  // TODO: Implement this function.
-  
-  const results = urls.map(async (url): Promise<TResult> => {
-    try {
-      const { status, body } = await httpGet(url);
-      const message =  JSON.parse(body).message;
-      return (status === 200) ? { 'Arnie Quote': message } : { 'FAILURE': message };
-    } catch (error: any) {
-      return { 'FAILURE': error.message || 'Request failed' };
-    }
-  });
+  // Choose Promise.allSettled instead of Promise.all,
+  // because partial results is better than showing none here
+  const results = await Promise.allSettled(urls.map(url => httpGet(url)));
 
-  return Promise.all(results);
+  return processResults(results);
 };
